@@ -1,0 +1,2 @@
+idf_component_register(SRCS "app_context.c" "modules/app_config.c" "modules/camera.c" "bus/esp_spi_slave.c" "bus/esp_i2c_slave.c"  "main.c"
+                    INCLUDE_DIRS "." "modules" "bus" REQUIRES esp_psram)
