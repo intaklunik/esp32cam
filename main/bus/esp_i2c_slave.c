@@ -5,12 +5,13 @@
 #include <freertos/task.h>
 #include <freertos/queue.h>
 #include "bus/esp_i2c_slave.h"
+#include "esp_err.h"
 #include "app_context.h"
 
 #define I2C_MAX_EVENTS 20
 
-#define I2C_SLAVE_RX_BUF_LEN 100
-#define I2C_SLAVE_TX_BUF_LEN 100
+#define I2C_SLAVE_RX_BUF_LEN 4
+#define I2C_SLAVE_TX_BUF_LEN 4
 #define I2C_REGISTER_SIZE 2
 
 #define I2C_SLAVE_SCL_IO 2
@@ -18,14 +19,19 @@
 
 #define I2C_SLAVE_ADDR_APP 0x11
 
+static const char * i2c_task_name = "i2c_slave_task";
+static const char * TAG = "I2C";
+
 typedef cmd_t event_t;
 
 typedef struct {
     QueueHandle_t event_queue;
     i2c_slave_dev_handle_t slave_handle;
+    TaskHandle_t xHandle;
+    bool enabled;
 } i2c_context_t;
 
-static i2c_context_t IRAM_ATTR  context;
+static i2c_context_t IRAM_ATTR context;
 
 static const event_t tx_event;
 static event_t rx_event;
@@ -73,30 +79,34 @@ static bool IRAM_ATTR i2c_slave_receive_cb(i2c_slave_dev_handle_t i2c_slave, con
 }
 
 static i2c_slave_event_callbacks_t cbs = {
-    .on_request = NULL, //i2c_slave_request_cb,
+    .on_request = i2c_slave_request_cb,
     .on_receive = i2c_slave_receive_cb,
 };
 
-static void i2c_slave_task(void *arg) {
+static void i2c_slave_task(void * arg) 
+{
+    ESP_LOGV(TAG, "%s start", i2c_task_name);
+
+    esp_err_t ret = ESP_OK;
     i2c_context_t * context = arg;
     event_t event;
     uint8_t * tx_data;
     uint8_t tx_length = 0;
     uint32_t write_len;
 
-    while (1) {
+    while (context->enabled) {
         if (xQueueReceive(context->event_queue, &event, pdMS_TO_TICKS(1000))) {
-            printf("event: reg %x, len %u, regval %u\n", event.reg, event.regval.length, event.regval.u8);
-            if(is_rx_event(&event)) {
+            if (is_rx_event(&event)) {
                 app_i2c_handle_rx(&event);
-            //}
-            //else {
-                if (event.regval.length == 0) {
-                    app_i2c_prepare_tx(&tx_data, &tx_length);
-                    if (tx_length) {
-                        ESP_ERROR_CHECK(i2c_slave_write(context->slave_handle, tx_data, tx_length, &write_len, 2000));
-                        // printf("after write_len %lu\n", write_len);
+            }
+            else {
+                app_i2c_prepare_tx(&tx_data, &tx_length);
+                if (tx_length) {
+                    ret = i2c_slave_write(context->slave_handle, tx_data, tx_length, &write_len, 2000);
+                    if (ret != ESP_OK) {
+                        ESP_LOGE(TAG, "i2c_slave_write failed: %s", esp_err_to_name(ret));
                     }
+                    ESP_LOGD(TAG, "write_len %lu\n", write_len);
                 }
             }
         }
@@ -107,6 +117,7 @@ static void i2c_slave_task(void *arg) {
 
 esp_err_t i2c_init_slave()
 {
+    esp_err_t ret = ESP_OK;
     i2c_slave_config_t i2c_slave_config = {
         .i2c_port = -1,
         .clk_source = I2C_CLK_SRC_DEFAULT,
@@ -119,13 +130,30 @@ esp_err_t i2c_init_slave()
 
     context.event_queue = xQueueCreate(I2C_MAX_EVENTS, sizeof(event_t));
     if (!context.event_queue) {
-        return ESP_ERR_INVALID_ARG;
+        ESP_LOGE(TAG, "xQueueCreate failed");
+        return ESP_ERR_NO_MEM;
     }
 
-    ESP_ERROR_CHECK(i2c_new_slave_device(&i2c_slave_config, &context.slave_handle));
-    ESP_ERROR_CHECK(i2c_slave_register_event_callbacks(context.slave_handle, &cbs, &context));
+    ret = i2c_new_slave_device(&i2c_slave_config, &context.slave_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "i2c_new_slave_device failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
 
-    xTaskCreate(i2c_slave_task, "i2c_slave_task", 4096, &context, 15, NULL);
+    ret = i2c_slave_register_event_callbacks(context.slave_handle, &cbs, &context);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "i2c_slave_register_event_callbacks failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
 
-    return ESP_OK;
+    context.enabled = true;
+
+    xTaskCreate(i2c_slave_task, i2c_task_name, 4096, &context, 15, &context.xHandle);
+    if (!context.xHandle) {
+            ESP_LOGE(TAG, "xTaskCreate(%s) failed", i2c_task_name);
+            context.enabled = false;
+            return ESP_ERR_NO_MEM;
+    }
+
+    return ret;
 }

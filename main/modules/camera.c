@@ -3,10 +3,10 @@
 #include <freertos/task.h>
 #include <freertos/queue.h>
 #include "esp_camera.h"
+#include "esp_log.h"
 #include "modules/camera.h"
 
 #define CAMERA_MODULE_AI_THINKER
-
 
 #define CAM_PIN_PWDN 32
 #define CAM_PIN_RESET -1
@@ -49,14 +49,16 @@ static camera_config_t camera_config = {
     .ledc_timer = LEDC_TIMER_0,
     .ledc_channel = LEDC_CHANNEL_0,
 
-    .pixel_format = PIXFORMAT_JPEG, //PIXFORMAT_RGB565,
-    .frame_size = FRAMESIZE_VGA,//FRAMESIZE_QQVGA,
+    .pixel_format = PIXFORMAT_RGB565,
+    .frame_size = FRAMESIZE_QQVGA,
 
     .jpeg_quality = 12,
     .fb_count = 2,
     .fb_location = CAMERA_FB_IN_PSRAM,
     .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
 };
+
+static const char * TAG = "CameraModule";
 
 typedef struct {
     sensor_t * sensor;
@@ -69,7 +71,7 @@ uint32_t camera_get_fb(uint8_t ** buffer)
 {
     context.current_fb = esp_camera_fb_get();
     if (context.current_fb == NULL) {
-        printf("fb s NULL\n");
+        ESP_LOGE(TAG, "esp_camera_fb_get returned NULL");
         return 0;
     }
     *buffer = context.current_fb->buf;
@@ -84,37 +86,37 @@ void camera_free_fb()
 
 int8_t camera_get_brightness()
 {
-    printf("brightness: %d", context.sensor->status.brightness);
+    ESP_LOGD(TAG, "get_brightness: %d", context.sensor->status.brightness);
     return context.sensor->status.brightness;
 }
 
 void camera_set_brightness(int8_t value)
 {
-    printf("brightness_val: %d", value);
+    ESP_LOGD(TAG, "set_brightness: %d", value);
     context.sensor->set_brightness(context.sensor, value);
 }
 
 int8_t camera_get_contrast()
 {
-    printf("contrast: %d", context.sensor->status.contrast);
+    ESP_LOGD(TAG, "get_contrast: %d", context.sensor->status.contrast);
     return context.sensor->status.contrast;
 }
 
 void camera_set_contrast(int8_t value)
 {
-    printf("contrast_val: %d", value);
+    ESP_LOGD(TAG, "set_contrast: %d", value);
     context.sensor->set_contrast(context.sensor, value);
 }
 
 int8_t camera_get_saturation()
 {
-    printf("saturation: %d", context.sensor->status.saturation);
+    ESP_LOGD(TAG, "get_saturation: %d", context.sensor->status.saturation);
     return context.sensor->status.saturation;
 }
 
 void camera_set_saturation(int8_t value)
 {
-    printf("saturation_val: %d", value);
+    ESP_LOGD(TAG, "set_saturation: %d", value);
     context.sensor->set_saturation(context.sensor, value);
 }
 
@@ -123,7 +125,7 @@ esp_err_t camera_init()
     esp_err_t ret = ESP_OK;
 
     if (CAM_PIN_PWDN != -1) {
-        printf("!=-1\n");
+        ESP_LOGI(TAG, "camera_init: CAM_PIN_PWDN != -1");
         gpio_reset_pin(CAM_PIN_PWDN);
         gpio_set_direction(CAM_PIN_PWDN, GPIO_MODE_OUTPUT);
         gpio_set_level(CAM_PIN_PWDN, 0);
@@ -131,11 +133,11 @@ esp_err_t camera_init()
 
     ret = esp_camera_init(&camera_config);
     if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "esp_camera_init failed: %s", esp_err_to_name(ret));
         return ret;
     }
 
     context.sensor = esp_camera_sensor_get();
-    context.current_fb = NULL;
 
     return ret;
 }
