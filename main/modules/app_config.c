@@ -1,7 +1,3 @@
-#include <stdint.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#include <freertos/queue.h>
 #include "esp_log.h"
 #include "modules/app_config.h"
 
@@ -42,7 +38,7 @@ uint8_t app_get_camera_stream_status()
     return app_config.camera_stream_status;
 }
 
-uint8_t app_set_camera_stream_status(uint8_t value)
+uint8_t app_set_camera_stream_status(uint8_t value) // TODO
 {
     if (value == 0 || value == 1 || app_config.camera_stream_status == value) {
         ESP_LOGW(TAG, "app_set_camera_stream_status wrong value");

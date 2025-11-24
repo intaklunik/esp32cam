@@ -1,9 +1,5 @@
-#include <stdint.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#include <freertos/queue.h>
+#include <esp_check.h>
 #include "esp_camera.h"
-#include "esp_log.h"
 #include "modules/camera.h"
 
 #define CAMERA_MODULE_AI_THINKER
@@ -52,9 +48,9 @@ static camera_config_t camera_config = {
     .pixel_format = PIXFORMAT_RGB565,
     .frame_size = FRAMESIZE_QQVGA,
 
-    .jpeg_quality = 12,
+    .jpeg_quality = 63,
     .fb_count = 2,
-    .fb_location = CAMERA_FB_IN_PSRAM,
+    .fb_location = CAMERA_FB_IN_DRAM, //CAMERA_FB_IN_PSRAM,
     .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
 };
 
@@ -131,13 +127,14 @@ esp_err_t camera_init()
         gpio_set_level(CAM_PIN_PWDN, 0);
     }
 
-    ret = esp_camera_init(&camera_config);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "esp_camera_init failed: %s", esp_err_to_name(ret));
-        return ret;
-    }
+    ESP_RETURN_ON_ERROR(esp_camera_init(&camera_config), TAG, "esp_camera_init failed");
 
     context.sensor = esp_camera_sensor_get();
 
     return ret;
+}
+
+void camera_free()
+{
+    esp_camera_return_all();
 }

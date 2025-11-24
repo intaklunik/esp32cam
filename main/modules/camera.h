@@ -3,6 +3,7 @@
 #include <esp_err.h>
 
 esp_err_t camera_init(void);
+void camera_free(void);
 
 int8_t camera_get_brightness(void);
 void camera_set_brightness(int8_t value);

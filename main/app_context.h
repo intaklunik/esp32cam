@@ -15,6 +15,9 @@ typedef struct {
     regval_t regval;
 } cmd_t;
 
+void app_shutdown(void);
+bool app_status(void);
+
 void app_i2c_handle_rx(const cmd_t * cmd);
 void app_i2c_prepare_tx(uint8_t ** data, uint8_t * length);
 

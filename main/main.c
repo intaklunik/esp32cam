@@ -1,8 +1,6 @@
+#include "esp_err.h"
 
-#include <stdint.h>
-
-
-void init_app_context(void);
+esp_err_t init_app_context(void);
 
 void app_main(void)
 {

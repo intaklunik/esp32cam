@@ -1,35 +1,42 @@
-#include <stdint.h>
 #include <stdbool.h>
-#include <esp_err.h>
+#include <esp_check.h>
+#include <stdatomic.h>
 #include "app_context.h"
 #include "regs.h"
 #include "bus/esp_i2c_slave.h"
 #include "bus/esp_spi_slave.h"
 #include "modules/app_config.h"
 #include "modules/camera.h"
-#include "esp_log.h"
 
 static const char * TAG = "AppContext";
+static atomic_bool _app_status;
+
+void app_shutdown()
+{
+    if (atomic_exchange(&_app_status, false) == true) {
+        app_spi_disable();
+        camera_free();
+    }
+}
+
+bool app_status()
+{
+    return atomic_load(&_app_status);
+}
 
 esp_err_t init_app_context()
 {
     esp_err_t ret = ESP_OK;
 
+    atomic_init(&_app_status, true);
     app_config_init();
-    ret = camera_init();
-    if (ret) {
-        printf("camera_init failed");
-    }
-    ret = i2c_init_slave();
-    if (ret) {
-        printf("i2c_init_slave failed");
-    }
-    
-    ret = app_spi_slave_init();
-    if (ret) {
-        printf("spi_init_slave failed");
-    }
+    ESP_RETURN_ON_ERROR(camera_init(), TAG, "camera_init failed");
+    ESP_GOTO_ON_ERROR(i2c_init_slave(), err, TAG, "i2c_init_slave failed %s", esp_err_to_name(ret));
+    ESP_GOTO_ON_ERROR(app_spi_slave_init(), err, TAG, "app_spi_slave_init failed %s", esp_err_to_name(ret));
 
+    return ESP_OK;
+err:
+    app_shutdown();
     return ret;
 }
 
@@ -82,7 +89,7 @@ static void i2c_app_handle(const cmd_t * cmd)
                     status_updated = app_set_camera_stream_status(cmd->regval.u8);
                     if (status_updated) {
                         ESP_LOGD(TAG, "camera_stream_status updated");
-                        app_spi_update();
+                        cmd->regval.u8 ? app_spi_enable() : app_spi_disable();
                     }
                     break;
             }
