@@ -22,11 +22,10 @@ static const char * TAG = "I2C";
 typedef cmd_t event_t;
 
 typedef struct {
-    TaskHandle_t xHandle;
     QueueHandle_t event_queue;
 } i2c_context_t;
 
-static i2c_context_t context;
+static i2c_context_t i2c_context;
 
 static const event_t tx_event;
 static event_t rx_event;
@@ -85,7 +84,8 @@ static i2c_slave_config_t i2c_slave_config = {
         .sda_io_num = I2C_SLAVE_SDA_IO,
         .slave_addr = I2C_SLAVE_ADDR_APP,
         .send_buf_depth = I2C_SLAVE_RX_BUF_LEN,
-        .receive_buf_depth = I2C_SLAVE_TX_BUF_LEN
+        .receive_buf_depth = I2C_SLAVE_TX_BUF_LEN,
+        .flags.enable_internal_pullup = 1,
 };
 
 static void i2c_slave_task(void * arg) 
@@ -99,7 +99,7 @@ static void i2c_slave_task(void * arg)
     context->event_queue = xQueueCreate(I2C_MAX_EVENTS, sizeof(event_t));
     ESP_GOTO_ON_FALSE(context->event_queue, ESP_ERR_NO_MEM, err_queue, TAG, "xQueueCreate failed");
     ESP_GOTO_ON_ERROR(i2c_new_slave_device(&i2c_slave_config, &slave_handle), err_device, TAG, "i2c_new_slave_device failed");
-    ESP_GOTO_ON_ERROR(i2c_slave_register_event_callbacks(slave_handle, &cbs, &context), err_callback, TAG, " i2c_slave_register_event_callbacks failed");
+    ESP_GOTO_ON_ERROR(i2c_slave_register_event_callbacks(slave_handle, &cbs, context), err_callback, TAG, " i2c_slave_register_event_callbacks failed");
 
     event_t event;
     uint8_t * tx_data;
@@ -107,7 +107,7 @@ static void i2c_slave_task(void * arg)
     uint32_t write_len;
 
     while (app_status()) {
-        if (xQueueReceive(context->event_queue, &event, pdMS_TO_TICKS(1000))) {
+        if (xQueueReceive(context->event_queue, &event, pdMS_TO_TICKS(1000)) == pdTRUE) {
             if (is_rx_event(&event)) {
                 app_i2c_handle_rx(&event);
             }
@@ -115,7 +115,7 @@ static void i2c_slave_task(void * arg)
                 app_i2c_prepare_tx(&tx_data, &tx_length);
                 if (tx_length) {
                     ESP_ERROR_CHECK_WITHOUT_ABORT(i2c_slave_write(slave_handle, tx_data, tx_length, &write_len, 2000));
-                    ESP_LOGD(TAG, "write_len %lu\n", write_len);
+                    ESP_LOGD(TAG, "data0 %u, write_len %lu\n", tx_data[0], write_len);
                 }
             }
         }
@@ -135,5 +135,5 @@ err_queue:
 
 esp_err_t inline i2c_init_slave()
 {
-    return xTaskCreate(i2c_slave_task, i2c_task_name, 4096, &context, 15, &context.xHandle) ? ESP_OK : ESP_ERR_NO_MEM;
+    return xTaskCreate(i2c_slave_task, i2c_task_name, 4096, &i2c_context, 15, NULL) ? ESP_OK : ESP_ERR_NO_MEM;
 }
